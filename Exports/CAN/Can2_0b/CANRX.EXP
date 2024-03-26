@@ -1,0 +1,101 @@
+
+(* @NESTEDCOMMENTS := 'Yes' *)
+(* @PATH := '\/CAN\/CAN2_0b' *)
+(* @OBJECTFLAGS := '0, 8' *)
+(* @SYMFILEFLAGS := '2048' *)
+(*******************************************************************************
+*  Copyright (C) 2011 TTControl S.r.l. All rights reserved.
+*  Via Julius Durst 66, I-39042 Bressanone (BZ), Italy, office@ttcontrol.com
+*
+*  PRE: 			none 
+*  POST: 			none
+*  GLOBAL:			gCan
+*  LIBRARIES:		lib60.lib
+*  DESCRIPTION: 	This POU is a high level function block to receive a single CAN-message (the newest one). 
+*					
+*  REVISION HISTORY:	
+*  2013-10-01	joh		Creation
+*  2013-11-26	kkh		some comments added/updated, name of global CAN message variable changed to gCan, updated to fullfill latest Coding Guidelines
+*  2015-11-11   joh		Fixing issue87479.
+*
+*******************************************************************************)
+FUNCTION_BLOCK CanRx
+VAR_INPUT
+	iCAN			: POINTER TO tCAN;
+	iCanId			: UDINT; 			(* CAN Id *)
+	iCanIdExtended	: BOOL; 			(* FALSE = 11-bit, TRUE = 29-bit *)
+	iTimeoutLimit	: TIME; 			(* if the specified PGN is not received within ui16TimeoutLimit ms, output bJ1939Timeout is TRUE *)
+END_VAR
+VAR_OUTPUT
+	oByteCount			: BYTE; 				(* number of bytes received *)
+	oData				: ARRAY [0..7] OF BYTE; (* data received *)
+	oNewData			: BOOL; 				(* flag IF new data has been received *)
+	oCanTimeout			: BOOL; 				(* TRUE if timeout has reached. see ui16TimeoutLimit *)
+	oReceiverId			: UINT := 65535; 		(* unique receiver ID for internal CAN management *)
+	oTooManyReceivers	: BOOL := FALSE; 		(* if TRUE the number of defined receiver FB exceeds CAN_MAX_RX_BUF -> message is not setup - received *)
+END_VAR
+VAR
+	fbCanRx				: RxBufferCan;			(* function block that handles the low level recieve *)
+	Timeout				: BOOL;					(* Timeout flag *)
+	Init				: BOOL := FALSE;		(* local variable for initializing on first cycle *)
+	TempVar				: DWORD;				(* temporary variable *)
+	fbTimeOutTon		: TON;					(* Timeout timer *)
+	Result				: WORD;					(* Error code from library function calls *)
+END_VAR
+(* @END_DECLARATION := '0' *)
+IF iCAN <> 0 THEN
+
+	(* do an initialization of receiver id with the first call of this function block and
+	   check if receiver id is within limit CAN_RX_MESSAGE_NUMBER.
+	   Do also an initialization OF RX message buffer with the appropriate mask *)
+	IF Init = FALSE THEN
+		IF iCAN^.cReceiverCnt <= CAN_MAX_RX_BUF THEN
+			(* configure CAN buffer *)
+			Result := xc_can_config_msg(ADR(iCAN^.hReceiver[iCAN^.cReceiverCnt]), iCAN^.Channel, 1, IO_CAN_MSG_READ, BOOL_TO_BYTE(iCanIdExtended), iCanId, 16#1FFFFFFF);
+			(* increase receiver id *)
+			oReceiverId := iCAN^.cReceiverCnt;
+			iCAN^.cReceiverCnt := iCAN^.cReceiverCnt + 1;
+			IF (iCAN^.cReceiverCnt > CAN_MAX_RX_BUF) OR (Result <> IO_E_OK) THEN
+				oTooManyReceivers := TRUE;
+			END_IF	(* ELSE do nothing *)
+		ELSE
+			oTooManyReceivers := TRUE;
+		END_IF
+		Init := TRUE;
+	ELSE
+		(* if buffer has been initialiazed and number of receiver is OK, CAN messages are read *)
+		IF (Init = TRUE) AND (oReceiverId <> 65535) AND (oTooManyReceivers = FALSE) THEN
+
+			(* read J1939 message *)
+			fbCanRx(	iCAN:=iCAN,
+						iMsgBuffer := oReceiverId,
+						iEnable:=TRUE,
+						oNewData=>);
+
+			oNewData := fbCanRx.oNewData;
+
+			(* new data has been received -> save data and necessary output informations *)
+			IF oNewData THEN
+				oData := iCAN^.CanMsg.Data;
+				oByteCount := iCAN^.CanMsg.Length;
+				timeout := FALSE;
+			END_IF	(* ELSE do nothing *)
+	
+			(* Check for timeout *)
+			fbTimeOutTon(IN:= oNewData = FALSE, PT:= iTimeoutLimit, Q=> Timeout, ET=> );
+
+			oCanTimeout := timeout;
+		ELSE
+			(* reset outputs *)
+			oNewData := FALSE;
+			oCanTimeout := TRUE;
+			oByteCount := 0;
+		END_IF
+	END_IF
+ELSE
+	oNewData := FALSE;
+	oCanTimeout := TRUE;
+	oByteCount := 0;
+END_IF
+
+END_FUNCTION_BLOCK

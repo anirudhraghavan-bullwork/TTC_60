@@ -1,0 +1,42 @@
+
+(* @NESTEDCOMMENTS := 'Yes' *)
+(* @PATH := '\/FB_LIBRARY' *)
+(* @OBJECTFLAGS := '0, 8' *)
+(* @SYMFILEFLAGS := '2048' *)
+FUNCTION MAP_INT : INT
+(*
+Author: Nikshitha S
+Date: 10-08-2023
+Description: This particular function works on inputs and outputs both with INTEGER datatype. Thus consuming less memory.
+*)
+VAR_INPUT
+	IN: INT;
+	IN_MIN:INT;
+	IN_MAX : INT;
+	OUT_MIN:INT;
+	OUT_MAX:INT;
+END_VAR
+
+VAR
+	ERROR: BOOL;
+	FINAL_MAP: INT;
+	INPUT_RANGE: INT;
+	OUTPUT_RANGE: INT;
+END_VAR
+(* @END_DECLARATION := '0' *)
+ERROR := (IN_MAX-IN_MIN=0) OR (IN<IN_MIN) OR (IN>IN_MAX);
+
+INPUT_RANGE := IN_MAX-IN_MIN;
+OUTPUT_RANGE := OUT_MAX-OUT_MIN;
+
+MAP_INT:= ((IN-IN_MIN)*OUTPUT_RANGE) / INPUT_RANGE + OUT_MIN;
+
+
+IF ERROR AND (IN<IN_MIN)THEN
+MAP_INT:=OUT_MIN;
+END_IF
+
+IF ERROR AND (IN>IN_MAX)THEN
+MAP_INT:=OUT_MAX;
+END_IF
+END_FUNCTION

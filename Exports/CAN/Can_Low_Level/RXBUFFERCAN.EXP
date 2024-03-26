@@ -1,0 +1,72 @@
+
+(* @NESTEDCOMMENTS := 'Yes' *)
+(* @PATH := '\/CAN\/CAN_Low_Level' *)
+(* @OBJECTFLAGS := '0, 8' *)
+(* @SYMFILEFLAGS := '2048' *)
+(*******************************************************************************
+* Copyright (C) 2014 TTControl S.r.l. All rights reserved.
+* Via Julius Durst 66, I-39042 Bressanone (BZ), Italy, office@ttcontrol.com
+*
+* PRE: -
+* POST: -
+* GLOBAL: -
+* LIBRARIES lib94.lib
+* DESCRIPTION: Function Block to read a Can Buffer
+* REVISION HISTORY:
+*
+* 2014-07-01  JOH       creation
+* 2015-11-11  JOH		Fixing issue87479.
+*
+*******************************************************************************)
+FUNCTION_BLOCK RxBufferCan
+VAR_INPUT
+	iCAN		: POINTER TO tCan;
+	iMsgBuffer  : UINT;
+	iEnable		: BOOL;			(* Enable of FB *)
+END_VAR
+VAR_OUTPUT
+	oNewData	: BOOL;			(* new data flag *)
+END_VAR
+VAR
+	ResCanRead	: WORD;			(* return value of CAN read *)
+	NrMsgRead	: BYTE;			(* number of read CAN frames *)
+	CanData		: t_can_frame;	(* CAN frame *)
+	i			: BYTE;
+END_VAR
+(* @END_DECLARATION := '0' *)
+IF iCAN <> 0 THEN
+
+	IF ((iEnable = TRUE) AND (iMsgBuffer <= CAN_MAX_RX_BUF)) THEN
+		(* Reset new data flag *)
+		oNewData := FALSE;
+		(* Call low I/O Driver can read function *)
+		ResCanRead := xc_can_read (iCAN^.hReceiver[iMsgBuffer], ADR(CanData), 1, ADR(NrMsgRead));
+	
+		IF (ResCanRead = IO_E_OK) OR (ResCanRead = IO_E_CAN_OVERFLOW) THEN
+			(* Read was succesully *)
+			FOR i := 0 TO 7 DO
+				(* Copy CAN data *)
+				iCAN^.CanMsg.Data[i] := CanData.data[i];
+			END_FOR
+			(* Copy CAN frame information *)
+			iCAN^.CanMsg.CobId := CanData.id;
+			iCAN^.CanMsg.Id_Format := CanData.id_format;
+			iCAN^.CanMsg.Length := CanData.length;
+			(* Set new data flag *)
+			oNewData := TRUE;
+		END_IF	(* ELSE do nothing *)
+
+	ELSE
+
+		(* reset variables *)
+		oNewData := FALSE;
+
+	END_IF	(* ELSE do nothing *)
+
+ELSE
+
+	(* reset variables *)
+	oNewData := FALSE;
+
+END_IF
+END_FUNCTION_BLOCK

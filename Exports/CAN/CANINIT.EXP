@@ -1,0 +1,23 @@
+
+(* @NESTEDCOMMENTS := 'Yes' *)
+(* @PATH := '\/CAN' *)
+(* @OBJECTFLAGS := '0, 8' *)
+(* @SYMFILEFLAGS := '2048' *)
+PROGRAM CanInit
+VAR_INPUT
+	iEnable 		: BOOL;				(* enable initialization flag *)
+	iChannel		: BYTE; 			(* CAN channel 0 ... x *)
+	iCAN			: POINTER TO tCan; 	(* pointer to CAN structure *)
+	iEcuCycleTime	: TIME; 			(* cycle time of task calling can transmit and receive FB *)
+END_VAR
+(* @END_DECLARATION := '0' *)
+IF iCan <> 0 THEN
+	(* initialize the CAN *)
+	IF iEnable THEN
+		iCAN^.EcuCycleTime := iEcuCycleTime;
+		iCAN^.Channel := iChannel;
+		iCAN^.cReceiverCnt := 0;
+		iCAN^.cTransmitterCnt := 0;
+	END_IF
+END_IF
+END_PROGRAM

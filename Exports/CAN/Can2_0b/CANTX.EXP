@@ -1,0 +1,118 @@
+
+(* @NESTEDCOMMENTS := 'Yes' *)
+(* @PATH := '\/CAN\/CAN2_0b' *)
+(* @OBJECTFLAGS := '0, 8' *)
+(* @SYMFILEFLAGS := '2048' *)
+(*******************************************************************************
+*  Copyright (C) 2011 TTControl S.r.l. All rights reserved.
+*  Via Julius Durst 66, I-39042 Bressanone (BZ), Italy, office@ttcontrol.com
+*
+*  PRE: 			none 
+*  POST: 			none
+*  GLOBAL:			gCan
+*  LIBRARIES:		lib60.lib
+*  DESCRIPTION: 	This POU is a high level function block to transmit CAN-messages. 
+*					
+*  REVISION HISTORY:	
+*  2013-10-01	joh		Creation
+*  2013-11-26	kkh		some comments added/updated, name of global CAN message variable changed to gCan, update to fullfill latest Coding Guidelines
+*  2014-07-25   joh		Added iForceSend .
+*  2015-11-11   joh		Fixing issue87479.
+*
+*******************************************************************************)
+FUNCTION_BLOCK CanTx
+VAR_INPUT
+	iEnable			: BOOL;					(* enables sending of message *)
+	iCAN			: POINTER TO tCan;
+	iForceSend		: BOOL;					(* force sending independnent of iTransmitRate *)
+	iTransmitRate	: TIME; 				(* transmit rate of function block *)
+	iCanId			: UDINT; 				(* CAN ID *)
+	iCanIdExtended	: BOOL; 				(* FALSE = 11-bit, TRUE = 29-bit *)
+	iByteCount		: BYTE; 				(* number of bytes to transmit *)
+	iData			: ARRAY [0..7] OF BYTE; (* data to transmit *)
+END_VAR
+VAR_OUTPUT
+	oTransmitterId		: UINT := 65535; (* unique transmitter ID for internal CAN management *)
+	oTooManyTransmitters: BOOL := FALSE; (* if TRUE the number of defined transmitter FB exceeds CAN_MAX_TX_BUF -> message is not setup - transmitted  *)
+	oMsgSent			: BOOL := FALSE; (* TRUE: message has been sent, FALSE: message has not been sent *)
+END_VAR
+VAR
+	fbCanTx			: TxBufferCan; 		(* function block that handles the low level transmission *)
+	InitMessage		: BOOL := FALSE; 	(* local variable for initializing on first cycle *)
+	fbTonTransmit	: TON; 				(* timer for transmit rate *)
+	FirstCycle		: BOOL := TRUE;		(* send in the first cycle *)
+	CanHandle		: BYTE;
+	Result			: WORD;				(* Error code from library function calls *)
+END_VAR
+
+(* @END_DECLARATION := '0' *)
+IF iCAN <> 0 THEN
+	IF iEnable THEN
+	
+		(* do an initialization of transmitter id with the first call of this function block and
+		   check if transmitter id is within LIMIT CAN_TX_MESSAGE_NUMBER *)
+		IF InitMessage = FALSE THEN
+			IF iCAN^.cTransmitterCnt  <= CAN_MAX_TX_BUF THEN
+				(* configure CAN buffer *)
+				xc_can_config_msg(ADR(iCan^.hTransmitter[iCan^.cTransmitterCnt]), iCan^.Channel, 1, IO_CAN_MSG_WRITE, BOOL_TO_BYTE(iCanIdExtended), 0, 0);
+				oTransmitterId := iCan^.cTransmitterCnt;
+				iCan^.cTransmitterCnt := oTransmitterId + 1;
+				IF (iCan^.cTransmitterCnt > CAN_MAX_TX_BUF) OR (Result <> IO_E_OK) THEN
+					oTooManyTransmitters := TRUE;
+				END_IF
+			ELSE
+				oTooManyTransmitters := TRUE;
+			END_IF
+			InitMessage := TRUE;
+			oMsgSent := FALSE;
+	
+		ELSE
+		
+			(* if iForceSend is TRUE, then the transmit timer is resetted, Msg should be send immediately *)
+			IF NOT(iForceSend) THEN
+				fbTonTransmit(	IN := iEnable,
+								PT := iTransmitRate - iCan^.EcuCycleTime);
+			ELSE
+				fbTonTransmit( 	IN := FALSE);
+			END_IF
+	
+			(* message is send if the timer is passed or message should be sent now or at the very first cycle *)
+			IF fbTonTransmit.Q OR iForceSend OR FirstCycle THEN
+				(* reset timer *)
+				fbTonTransmit(IN := FALSE);
+				(* do process only if it is a valid transmitter id -> bTooManyTransmitters = FALSE *)
+				IF (oTooManyTransmitters = FALSE) THEN
+					(* check valid range for ui8ByteCount *)
+					IF (iByteCount > 8) THEN
+						iByteCount := 8;
+					END_IF
+	
+					(* send CAN message *)
+					fbCanTx(	iCan := iCan,
+								iMsgId:= iCanId,
+								iExtendedId:= iCanIdExtended,
+								iData:= iData,
+								iTransmitterId := oTransmitterId,
+								iLength:= iByteCount,
+								iEnable:= TRUE);
+				ELSE
+					oMsgSent := FALSE;
+				END_IF
+				FirstCycle := FALSE;
+			ELSE
+				oMsgSent := FALSE;
+			END_IF
+		END_IF 
+	ELSE
+		(* reset timer *)
+		fbTonTransmit( IN := FALSE);
+		FirstCycle := TRUE;	
+		oMsgSent := FALSE;
+	END_IF
+ELSE
+	(* reset timer *)
+	fbTonTransmit( IN := FALSE);
+	FirstCycle := TRUE;	
+	oMsgSent := FALSE;
+END_IF
+END_FUNCTION_BLOCK

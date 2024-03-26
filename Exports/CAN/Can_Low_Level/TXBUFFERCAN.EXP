@@ -1,0 +1,66 @@
+
+(* @NESTEDCOMMENTS := 'Yes' *)
+(* @PATH := '\/CAN\/CAN_Low_Level' *)
+(* @OBJECTFLAGS := '0, 8' *)
+(* @SYMFILEFLAGS := '2048' *)
+(*******************************************************************************
+* Copyright (C) 2014 TTControl S.r.l. All rights reserved.
+* Via Julius Durst 66, I-39042 Bressanone (BZ), Italy, office@ttcontrol.com
+*
+* PRE: -
+* POST: -
+* GLOBAL: -
+* LIBRARIES lib94.lib
+* DESCRIPTION: Function Block to write a Can Buffer
+* REVISION HISTORY:
+*
+* 2014-07-01  JOH       creation
+*
+*******************************************************************************)
+FUNCTION_BLOCK TxBufferCan
+VAR_INPUT
+	iCAN		: POINTER TO tCAN;
+	iMsgId		: UDINT;	(* CAN Id *)
+	iExtendedId	: BOOL;		(* Flag Id is a Standard 11-bit or an Extended 29-bit*)
+	iData		: ARRAY[0..7] OF BYTE;
+	iTransmitterId: UINT;
+	iLength		: BYTE;		(* Length of data frame *)
+	iEnable		: BOOL;		(* Enable of FB *)
+END_VAR
+VAR_OUTPUT
+	oMsgSent	: BOOL;
+END_VAR
+VAR
+	ResCanWrite	: WORD;		(* return value of CAN read *)
+	CanData		: t_can_frame;
+	i			: BYTE;
+END_VAR
+(* @END_DECLARATION := '0' *)
+IF iCAN <> 0 THEN
+	IF (iEnable = TRUE) AND (iLength >= 1) AND (iLength <= 8) THEN
+	
+		(* prepare data *)
+		FOR i := 0 TO (iLength - 1) BY 1 DO
+			CanData.data[i] := iData[i];
+		END_FOR
+
+		CanData.id := iMsgId;
+		CanData.id_format := BOOL_TO_BYTE(iExtendedId);
+		CanData.length := iLength;
+	
+		(* send data *)
+		ResCanWrite := xc_can_write (iCAN^.hTransmitter[iTransmitterId], ADR(CanData), 1);
+		IF (ResCanWrite = IO_E_OK) THEN
+			oMsgSent := TRUE;
+		ELSE
+			oMsgSent := FALSE;
+		END_IF
+
+	ELSE
+		oMsgSent := FALSE;
+	END_IF
+ELSE
+	oMsgSent := FALSE;
+END_IF
+
+END_FUNCTION_BLOCK
